@@ -31,10 +31,18 @@ impl CodeRoots {
 pub struct AppState {
     pub roots: Arc<CodeRoots>,
     pub user_id: Arc<String>,
+    /// Global indexed-ready flag (true once the LSP finished its first index).
+    /// Mirrors `LspClient::ready`; `workspace_status` reads it to report
+    /// `IndexStatus::Ready`, and node polls it as the snapshot trigger.
+    pub ready: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl AppState {
     pub fn new(roots: CodeRoots, user_id: String) -> Self {
-        Self { roots: Arc::new(roots), user_id: Arc::new(user_id) }
+        Self {
+            roots: Arc::new(roots),
+            user_id: Arc::new(user_id),
+            ready: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
     }
 }

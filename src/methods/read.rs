@@ -14,9 +14,16 @@ use crate::state::AppState;
 
 /// `workspace_status{}` → repos + per-(repo,lang) index status.
 ///
-/// In v1 the LSP is not yet wired, so every detected language reports
-/// `Indexing` (rust) — `Ready` arrives once Task 8 lands the LSP signal.
+/// Reports `Ready` once the LSP has signalled its first finished index (the
+/// global `state.ready` flag mirrors `LspClient::ready`); until then every
+/// detected language reports `Indexing` and symbol queries route to the
+/// tree-sitter fallback. This flag is node's cold→warm snapshot trigger.
 pub fn workspace_status(state: &AppState, _req: WorkspaceStatusReq) -> WorkspaceStatusResp {
+    let status = if state.ready.load(std::sync::atomic::Ordering::SeqCst) {
+        IndexStatus::Ready
+    } else {
+        IndexStatus::Indexing
+    };
     let repos = discover_repos(&state.roots.projects)
         .into_iter()
         .map(|r| RepoIndex {
@@ -24,7 +31,7 @@ pub fn workspace_status(state: &AppState, _req: WorkspaceStatusReq) -> Workspace
             languages: r
                 .languages
                 .into_iter()
-                .map(|lang| LangIndex { lang, status: IndexStatus::Indexing })
+                .map(|lang| LangIndex { lang, status })
                 .collect(),
         })
         .collect();

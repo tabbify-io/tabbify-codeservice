@@ -4,6 +4,7 @@
 //! on :8731. Every path is validated under `~/projects ∪ ~/knowledge` so a
 //! traversal escape is `forbidden`, never served.
 
+pub mod lsp;
 pub mod methods;
 pub mod paths;
 pub mod repo;

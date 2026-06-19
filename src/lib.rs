@@ -9,3 +9,4 @@ pub mod paths;
 pub mod repo;
 pub mod router;
 pub mod state;
+pub mod treesitter;

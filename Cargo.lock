@@ -1159,6 +1159,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "tabbify-broker"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tabbify-workspace-contract",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "tabbify-codeservice"
 version = "0.1.0"
 dependencies = [
@@ -1168,6 +1182,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "tabbify-broker",
  "tabbify-workspace-contract",
  "tempfile",
  "tokio",

@@ -41,6 +41,12 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/code/insert_before_symbol", post(h_insert_before_symbol))
         .route("/v1/code/insert_after_symbol", post(h_insert_after_symbol))
         .route("/v1/code/rename_symbol", post(h_rename_symbol))
+        .route("/v1/code/commit", post(h_commit))
+        .route("/v1/code/push", post(h_push))
+        .route("/v1/code/forge_create_repo", post(h_forge_create_repo))
+        .route("/v1/code/forge_list_repos", post(h_forge_list_repos))
+        .route("/v1/code/forge_open_pr", post(h_forge_open_pr))
+        .route("/v1/code/forge_file_url", post(h_forge_file_url))
         .with_state(state)
 }
 
@@ -147,4 +153,46 @@ async fn h_rename_symbol(
     Json(req): Json<RenameSymbolReq>,
 ) -> Json<CodeResponse<EditResp>> {
     envelope(crate::methods::edit::rename_symbol(&st, req))
+}
+
+async fn h_commit(
+    State(st): State<AppState>,
+    Json(req): Json<CommitReq>,
+) -> Json<CodeResponse<CommitResp>> {
+    envelope(crate::methods::git::commit(&st, req))
+}
+
+async fn h_push(
+    State(st): State<AppState>,
+    Json(req): Json<PushReq>,
+) -> Json<CodeResponse<PushResp>> {
+    envelope(crate::methods::git::push(&st, req))
+}
+
+async fn h_forge_create_repo(
+    State(st): State<AppState>,
+    Json(req): Json<ForgeCreateRepoReq>,
+) -> Json<CodeResponse<ForgeRepoInfo>> {
+    envelope(crate::methods::git::forge_create_repo(&st, req))
+}
+
+async fn h_forge_list_repos(
+    State(st): State<AppState>,
+    Json(req): Json<ForgeListReposReq>,
+) -> Json<CodeResponse<ForgeListReposResp>> {
+    envelope(crate::methods::git::forge_list_repos(&st, req))
+}
+
+async fn h_forge_open_pr(
+    State(st): State<AppState>,
+    Json(req): Json<ForgeOpenPrReq>,
+) -> Json<CodeResponse<ForgePrResp>> {
+    envelope(crate::methods::git::forge_open_pr(&st, req))
+}
+
+async fn h_forge_file_url(
+    State(st): State<AppState>,
+    Json(req): Json<ForgeFileUrlReq>,
+) -> Json<CodeResponse<ForgeUrlResp>> {
+    envelope(crate::methods::git::forge_file_url(&st, req))
 }

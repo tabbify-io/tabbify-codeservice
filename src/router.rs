@@ -36,6 +36,11 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/code/find_symbol", post(h_find_symbol))
         .route("/v1/code/find_references", post(h_find_references))
         .route("/v1/code/read_symbol", post(h_read_symbol))
+        .route("/v1/code/edit", post(h_edit))
+        .route("/v1/code/replace_symbol_body", post(h_replace_symbol_body))
+        .route("/v1/code/insert_before_symbol", post(h_insert_before_symbol))
+        .route("/v1/code/insert_after_symbol", post(h_insert_after_symbol))
+        .route("/v1/code/rename_symbol", post(h_rename_symbol))
         .with_state(state)
 }
 
@@ -107,4 +112,39 @@ async fn h_read_symbol(
     Json(req): Json<ReadSymbolReq>,
 ) -> Json<CodeResponse<ReadSymbolResp>> {
     envelope(symbols::read_symbol(&st, req))
+}
+
+async fn h_edit(
+    State(st): State<AppState>,
+    Json(req): Json<EditReq>,
+) -> Json<CodeResponse<EditResp>> {
+    envelope(crate::methods::edit::edit(&st, req))
+}
+
+async fn h_replace_symbol_body(
+    State(st): State<AppState>,
+    Json(req): Json<ReplaceSymbolBodyReq>,
+) -> Json<CodeResponse<EditResp>> {
+    envelope(crate::methods::edit::replace_symbol_body(&st, req))
+}
+
+async fn h_insert_before_symbol(
+    State(st): State<AppState>,
+    Json(req): Json<InsertSymbolReq>,
+) -> Json<CodeResponse<EditResp>> {
+    envelope(crate::methods::edit::insert_before_symbol(&st, req))
+}
+
+async fn h_insert_after_symbol(
+    State(st): State<AppState>,
+    Json(req): Json<InsertSymbolReq>,
+) -> Json<CodeResponse<EditResp>> {
+    envelope(crate::methods::edit::insert_after_symbol(&st, req))
+}
+
+async fn h_rename_symbol(
+    State(st): State<AppState>,
+    Json(req): Json<RenameSymbolReq>,
+) -> Json<CodeResponse<EditResp>> {
+    envelope(crate::methods::edit::rename_symbol(&st, req))
 }

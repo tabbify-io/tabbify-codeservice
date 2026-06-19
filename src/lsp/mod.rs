@@ -13,6 +13,7 @@
 //! symbol queries route to the tree-sitter fallback.
 
 pub mod jsonrpc;
+pub mod manager;
 
 use std::io::Write;
 use std::process::{Child, Command, Stdio};
@@ -25,12 +26,28 @@ use jsonrpc::{encode_frame, FrameReader};
 
 /// A live rust-analyzer process scoped to one repo root.
 pub struct LspClient {
+    /// The rust-analyzer process. Held for liveness and reaped on `Drop` so a
+    /// dropped client never orphans a long-lived LSP process.
     child: Mutex<Child>,
+    /// Shared write half — both `send()` (our requests) and the reader thread
+    /// (answering server requests) write framed messages to rust-analyzer.
+    stdin: Arc<Mutex<std::process::ChildStdin>>,
     next_id: Mutex<i64>,
     /// Pending request id → response slot, filled by the reader thread.
     pending: Arc<Mutex<std::collections::HashMap<i64, Value>>>,
     /// Flips true on first index-complete progress notification.
     pub ready: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Drop for LspClient {
+    fn drop(&mut self) {
+        // Kill + reap rust-analyzer so dropping a client never leaves an
+        // orphaned LSP (each one otherwise pins a core indexing).
+        if let Ok(mut child) = self.child.lock() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
 }
 
 impl LspClient {
@@ -45,27 +62,51 @@ impl LspClient {
             .map_err(|e| CodeError::new(CodeErrorCode::Internal, format!("spawn ra: {e}")))?;
 
         let stdout = child.stdout.take().expect("ra stdout");
+        let stdin = child.stdin.take().expect("ra stdin");
         let pending: Arc<Mutex<std::collections::HashMap<i64, Value>>> = Default::default();
         let ready = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stdin = Arc::new(Mutex::new(stdin));
 
-        // Reader thread: demux responses (by id) and watch progress for ready.
+        // Reader thread: demux RESPONSES (id, no method) by id, ANSWER server
+        // REQUESTS (id + method — e.g. `window/workDoneProgress/create`) with a
+        // null result so rust-analyzer keeps streaming progress, and watch the
+        // index-done NOTIFICATION (method, no id) to flip `ready`.
         let pending_r = pending.clone();
         let ready_r = ready.clone();
+        let stdin_r = stdin.clone();
         std::thread::spawn(move || {
             let mut reader = FrameReader::new(stdout);
             while let Ok(Some(frame)) = reader.read_frame() {
                 let Ok(msg) = serde_json::from_slice::<Value>(&frame) else {
                     continue;
                 };
-                if let Some(id) = msg.get("id").and_then(|i| i.as_i64()) {
-                    pending_r.lock().unwrap().insert(id, msg);
-                } else if is_index_done(&msg) {
-                    ready_r.store(true, std::sync::atomic::Ordering::SeqCst);
+                let id = msg.get("id").and_then(|i| i.as_i64());
+                let is_request = msg.get("method").is_some();
+                match (id, is_request) {
+                    // Server → client REQUEST (must be answered to unblock progress).
+                    (Some(rid), true) => {
+                        let reply = json!({"jsonrpc":"2.0","id":rid,"result":null});
+                        if let Ok(mut w) = stdin_r.lock() {
+                            let bytes = encode_frame(serde_json::to_vec(&reply).unwrap().as_slice());
+                            let _ = w.write_all(&bytes).and_then(|_| w.flush());
+                        }
+                    }
+                    // Response to one of OUR requests.
+                    (Some(rid), false) => {
+                        pending_r.lock().unwrap().insert(rid, msg);
+                    }
+                    // Notification (no id) — watch for the index-done signal.
+                    (None, _) => {
+                        if is_index_done(&msg) {
+                            ready_r.store(true, std::sync::atomic::Ordering::SeqCst);
+                        }
+                    }
                 }
             }
         });
 
         let client = Arc::new(Self {
+            stdin,
             child: Mutex::new(child),
             next_id: Mutex::new(1),
             pending,
@@ -95,7 +136,14 @@ impl LspClient {
             "params":{
                 "processId":null,
                 "rootUri":uri,
-                "capabilities":{},
+                // We MUST advertise `window.workDoneProgress` — rust-analyzer only
+                // emits the `$/progress` cache-priming/indexing notifications (the
+                // signal `is_index_done` flips `ready` on) when the client claims
+                // this capability. With an empty `capabilities` it stays silent and
+                // `ready` never trips (verified against rust-analyzer 1.95).
+                "capabilities":{
+                    "window": { "workDoneProgress": true }
+                },
                 "initializationOptions":{
                     "cargo": { "buildScripts": { "enable": false } },
                     "procMacro": { "enable": false }
@@ -116,11 +164,7 @@ impl LspClient {
     /// Write one JSON-RPC message to rust-analyzer's stdin.
     fn send(&self, msg: &Value) -> Result<(), CodeError> {
         let bytes = encode_frame(serde_json::to_vec(msg).unwrap().as_slice());
-        let mut child = self.child.lock().unwrap();
-        let stdin = child
-            .stdin
-            .as_mut()
-            .ok_or_else(|| CodeError::new(CodeErrorCode::Internal, "ra stdin closed"))?;
+        let mut stdin = self.stdin.lock().unwrap();
         stdin
             .write_all(&bytes)
             .and_then(|_| stdin.flush())

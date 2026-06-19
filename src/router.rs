@@ -10,7 +10,7 @@ use serde::Serialize;
 
 use tabbify_workspace_contract::rpc::*;
 
-use crate::methods::{read, search};
+use crate::methods::{read, search, symbols};
 use crate::state::AppState;
 
 /// Wrap any method result into the wire envelope as an axum JSON response.
@@ -32,6 +32,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/code/kb_list", post(h_kb_list))
         .route("/v1/code/code_search", post(h_code_search))
         .route("/v1/code/find_file", post(h_find_file))
+        .route("/v1/code/get_symbols_overview", post(h_get_symbols_overview))
+        .route("/v1/code/find_symbol", post(h_find_symbol))
+        .route("/v1/code/find_references", post(h_find_references))
+        .route("/v1/code/read_symbol", post(h_read_symbol))
         .with_state(state)
 }
 
@@ -75,4 +79,32 @@ async fn h_find_file(
     Json(req): Json<FindFileReq>,
 ) -> Json<CodeResponse<FindFileResp>> {
     envelope(search::find_file(&st, req))
+}
+
+async fn h_get_symbols_overview(
+    State(st): State<AppState>,
+    Json(req): Json<GetSymbolsOverviewReq>,
+) -> Json<CodeResponse<GetSymbolsOverviewResp>> {
+    envelope(symbols::get_symbols_overview(&st, req))
+}
+
+async fn h_find_symbol(
+    State(st): State<AppState>,
+    Json(req): Json<FindSymbolReq>,
+) -> Json<CodeResponse<FindSymbolResp>> {
+    envelope(symbols::find_symbol(&st, req))
+}
+
+async fn h_find_references(
+    State(st): State<AppState>,
+    Json(req): Json<FindReferencesReq>,
+) -> Json<CodeResponse<FindReferencesResp>> {
+    envelope(symbols::find_references(&st, req))
+}
+
+async fn h_read_symbol(
+    State(st): State<AppState>,
+    Json(req): Json<ReadSymbolReq>,
+) -> Json<CodeResponse<ReadSymbolResp>> {
+    envelope(symbols::read_symbol(&st, req))
 }

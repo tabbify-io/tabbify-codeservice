@@ -35,6 +35,9 @@ pub struct AppState {
     /// Mirrors `LspClient::ready`; `workspace_status` reads it to report
     /// `IndexStatus::Ready`, and node polls it as the snapshot trigger.
     pub ready: Arc<std::sync::atomic::AtomicBool>,
+    /// Lazy per-repo rust-analyzer registry (`find_references` drives the real
+    /// `textDocument/references` request through it).
+    pub lsp: Arc<crate::lsp::manager::LspManager>,
 }
 
 impl AppState {
@@ -43,6 +46,7 @@ impl AppState {
             roots: Arc::new(roots),
             user_id: Arc::new(user_id),
             ready: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            lsp: Arc::new(crate::lsp::manager::LspManager::default()),
         }
     }
 }

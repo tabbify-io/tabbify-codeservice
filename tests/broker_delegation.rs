@@ -135,7 +135,7 @@ fn push_traversal_repo_is_forbidden_before_broker() {
 }
 
 #[test]
-fn forge_list_surfaces_brokers_honest_not_implemented() {
+fn forge_list_surfaces_brokers_honest_needs_credential() {
     let _guard = ENV_LOCK.lock().unwrap();
     let td = tempfile::tempdir().unwrap();
     let projects = td.path().join("projects");
@@ -152,14 +152,14 @@ fn forge_list_surfaces_brokers_honest_not_implemented() {
         CodeRoots { projects, knowledge: td.path().join("knowledge") },
         "default".into(),
     );
-    // The broker's ForgeList arm is the T5-owned honest not-implemented: it
-    // returns an `internal` error. The codeservice MUST surface it verbatim,
-    // NOT fabricate an empty repo list.
+    // With no forge configured, the broker's (T5-filled) ForgeList arm returns
+    // an honest `needs_credential` ("forge not configured"). The codeservice MUST
+    // surface it verbatim, NOT fabricate an empty repo list.
     let result = forge_list_repos(&st, ForgeListReposReq {});
     unsafe {
         std::env::remove_var("TABBIFY_BROKER_SOCKET");
     }
     let err = result.unwrap_err();
-    assert_eq!(err.code, CodeErrorCode::Internal);
-    assert!(err.message.contains("not implemented"));
+    assert_eq!(err.code, CodeErrorCode::NeedsCredential);
+    assert!(err.message.contains("not configured"));
 }

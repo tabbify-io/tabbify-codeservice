@@ -1208,6 +1208,7 @@ dependencies = [
 [[package]]
 name = "tabbify-broker"
 version = "0.1.0"
+source = "git+https://github.com/tabbify-io/tabbify-broker.git?rev=a637582b1a65ddbcf9362ab57e5d2acc0e19b252#a637582b1a65ddbcf9362ab57e5d2acc0e19b252"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1248,6 +1249,7 @@ dependencies = [
 [[package]]
 name = "tabbify-workspace-contract"
 version = "0.1.0"
+source = "git+https://github.com/tabbify-io/tabbify-workspace-contract.git?rev=35330cac6925d89928d916d0b6ce0d9839099f00#35330cac6925d89928d916d0b6ce0d9839099f00"
 dependencies = [
  "serde",
  "serde_json",

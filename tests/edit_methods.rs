@@ -37,6 +37,64 @@ fn edit_replaces_string_and_reports_changed_file() {
 }
 
 #[test]
+fn edit_creates_missing_file_on_pure_insert() {
+    // Свежий репозиторий: агент кладёт ПЕРВЫЙ файл через чистую вставку
+    // (old_string/range отсутствуют). Файла нет → edit создаёт его вместе с
+    // недостающими родительскими каталогами.
+    let (td, st, _f) = fixture();
+    let resp = edit(&st, EditReq {
+        repo: "demo".into(),
+        path: "public/index.html".into(),
+        replacements: vec![Replacement {
+            old_string: None,
+            range: None,
+            new_string: "<!doctype html>\n<h1>hi</h1>\n".into(),
+        }],
+    })
+    .unwrap();
+    assert_eq!(resp.changed_files, vec!["public/index.html".to_string()]);
+    let written =
+        fs::read_to_string(td.path().join("projects/demo/public/index.html")).unwrap();
+    assert_eq!(written, "<!doctype html>\n<h1>hi</h1>\n");
+}
+
+#[test]
+fn edit_creates_missing_file_when_old_string_empty() {
+    // Пустой `old_string` тоже «нечего матчить» → трактуется как создание.
+    let (td, st, _f) = fixture();
+    edit(&st, EditReq {
+        repo: "demo".into(),
+        path: "Dockerfile".into(),
+        replacements: vec![Replacement {
+            old_string: Some(String::new()),
+            range: None,
+            new_string: "FROM scratch\n".into(),
+        }],
+    })
+    .unwrap();
+    let written = fs::read_to_string(td.path().join("projects/demo/Dockerfile")).unwrap();
+    assert_eq!(written, "FROM scratch\n");
+}
+
+#[test]
+fn edit_missing_file_with_old_string_is_not_found() {
+    // Файла нет, но замена что-то ЖДЁТ найти (`old_string`) → матчить нечего,
+    // остаётся `no such file` (создание запрещено — это не чистая вставка).
+    let (_td, st, _f) = fixture();
+    let err = edit(&st, EditReq {
+        repo: "demo".into(),
+        path: "missing.rs".into(),
+        replacements: vec![Replacement {
+            old_string: Some("foo".into()),
+            range: None,
+            new_string: "bar".into(),
+        }],
+    })
+    .unwrap_err();
+    assert_eq!(err.code, CodeErrorCode::NotFound);
+}
+
+#[test]
 fn edit_missing_old_string_is_not_found() {
     let (_td, st, _f) = fixture();
     let err = edit(&st, EditReq {

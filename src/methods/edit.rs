@@ -36,15 +36,46 @@ fn atomic_write(abs: &std::path::Path, content: &str) -> Result<(), CodeError> {
 }
 
 /// `edit{repo,path,replacements[]}` — string/range replacements in one file.
+///
+/// Если файла ещё НЕТ, правка трактуется как СОЗДАНИЕ, но только для однозначной
+/// чистой вставки (см. [`create_contents`]) — так агент кладёт первый файл в
+/// свежий репозиторий (`index.html`, `Dockerfile`). Путь уже подтверждён через
+/// `resolve` (отвергает `..`/абсолютные), поэтому создание не может выйти за
+/// пределы дерева репозитория. Поведение для СУЩЕСТВУЮЩИХ файлов не меняется.
 pub fn edit(state: &AppState, req: EditReq) -> Result<EditResp, CodeError> {
     let abs = rebase(state, resolve(Root::Projects, &req.repo, &req.path)?);
-    let mut content = std::fs::read_to_string(&abs)
-        .map_err(|_| CodeError::new(CodeErrorCode::NotFound, "no such file"))?;
-    for r in &req.replacements {
-        content = apply_replacement(&content, r)?;
-    }
+    let content = match std::fs::read_to_string(&abs) {
+        Ok(mut existing) => {
+            for r in &req.replacements {
+                existing = apply_replacement(&existing, r)?;
+            }
+            existing
+        }
+        Err(_) => {
+            // Файла нет → создаём (если это чистая вставка), заводя parent-каталоги.
+            let content = create_contents(&req.replacements)?;
+            if let Some(parent) = abs.parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| CodeError::new(CodeErrorCode::Internal, format!("mkdir: {e}")))?;
+            }
+            content
+        }
+    };
     atomic_write(&abs, &content)?;
     Ok(EditResp { changed_files: vec![req.path] })
+}
+
+/// Целевого файла нет. Разрешаем СОЗДАНИЕ только для однозначной чистой вставки:
+/// ровно одна замена без `range` и с пустым/отсутствующим `old_string` — матчить
+/// в несуществующем файле нечего, так что новым содержимым становится
+/// `new_string`. Иначе — `no such file`: заменить контент, которого нет, нельзя.
+fn create_contents(replacements: &[Replacement]) -> Result<String, CodeError> {
+    match replacements {
+        [r] if r.range.is_none() && r.old_string.as_deref().map(str::is_empty).unwrap_or(true) => {
+            Ok(r.new_string.clone())
+        }
+        _ => Err(CodeError::new(CodeErrorCode::NotFound, "no such file")),
+    }
 }
 
 /// Apply one replacement (exactly one of `old_string` / `range` must be set).

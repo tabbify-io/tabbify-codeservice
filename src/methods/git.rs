@@ -23,8 +23,8 @@ pub fn commit(state: &AppState, req: CommitReq) -> Result<CommitResp, CodeError>
     if !work.join(".git").exists() {
         return Err(CodeError::new(CodeErrorCode::NotFound, "not a git repo"));
     }
-    let mut add = Command::new("git");
-    add.current_dir(&work).arg("add");
+    let mut add = git_at(&work);
+    add.arg("add");
     match &req.paths {
         Some(paths) if !paths.is_empty() => {
             add.arg("--");
@@ -41,18 +41,32 @@ pub fn commit(state: &AppState, req: CommitReq) -> Result<CommitResp, CodeError>
     }
     run_ok(&mut add, "git add")?;
 
-    let mut ci = Command::new("git");
-    ci.current_dir(&work).args(["commit", "-m", &req.message]);
+    let mut ci = git_at(&work);
+    ci.args(["commit", "-m", &req.message]);
     run_ok(&mut ci, "git commit")?;
 
-    let sha = Command::new("git")
-        .current_dir(&work)
+    let sha = git_at(&work)
         .args(["rev-parse", "HEAD"])
         .output()
         .map_err(|e| CodeError::new(CodeErrorCode::Internal, format!("rev-parse: {e}")))?;
     Ok(CommitResp {
         commit_sha: String::from_utf8_lossy(&sha.stdout).trim().to_string(),
     })
+}
+
+/// Собирает `git`-команду в рабочем каталоге `work` с обходом проверки «dubious
+/// ownership». Воркспейс-репо принадлежит uid `broker` (он его клонирует), а
+/// code-service бежит как `agent` c `HOME=/` (без `~/.gitconfig`) — поэтому любой
+/// git-вызов иначе падает с `fatal: detected dubious ownership in repository`.
+/// `-c safe.directory=<work>` идёт ПЕРВЫМ аргументом (до подкоманды). ВСЕ
+/// локальные git-подкоманды в этом файле строятся ТОЛЬКО через этот хелпер, чтобы
+/// флаг не забыли ни на одном call-site.
+fn git_at(work: &std::path::Path) -> Command {
+    let mut cmd = Command::new("git");
+    cmd.current_dir(work)
+        .arg("-c")
+        .arg(format!("safe.directory={}", work.display()));
+    cmd
 }
 
 fn run_ok(cmd: &mut Command, what: &str) -> Result<(), CodeError> {
@@ -129,4 +143,27 @@ pub fn forge_open_pr(_state: &AppState, req: ForgeOpenPrReq) -> Result<ForgePrRe
 /// `forge_file_url{repo,path,ref?}` → broker `forge_file_url` (T5 adds the arm).
 pub fn forge_file_url(_state: &AppState, req: ForgeFileUrlReq) -> Result<ForgeUrlResp, CodeError> {
     broker_client::call(&BrokerRequest::ForgeFileUrl(req))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::git_at;
+    use std::ffi::OsStr;
+    use std::path::Path;
+
+    #[test]
+    fn git_at_prepends_safe_directory_flag() {
+        // Каждая git-подкоманда несёт `-c safe.directory=<work>` ПЕРВЫМ, до
+        // подкоманды — иначе воркспейс-репо (owned by broker) даёт «dubious
+        // ownership» под uid `agent`.
+        let work = Path::new("/home/agent/projects/demo");
+        let cmd = git_at(work);
+        assert_eq!(cmd.get_program(), OsStr::new("git"));
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(args[0], "-c");
+        assert_eq!(args[1], "safe.directory=/home/agent/projects/demo");
+    }
 }
